@@ -563,18 +563,4 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
   );
 };
 
-export default RestaurantPOS;('menu')}
-                className={`px-4 py-2 rounded flex items-center gap-2 ${currentPage === 'menu' || currentPage === 'category' ? 'bg-green-500 text-white' : 'bg-gray-200'}`}
-              >
-                <Home size={16} />
-                เมนูหลัก
-              </button>
-              <button
-                onClick={() => setCurrentPage('management')}
-                className={`px-4 py-2 rounded flex items-center gap-2 ${currentPage === 'management' ? 'bg-green-500 text-white' : 'bg-gray-200'}`}
-              >
-                <Edit size={16} />
-                จัดการเมนู
-              </button>
-              <button
-                onClick={() => setCurrentPage
+export default RestaurantPOS;
