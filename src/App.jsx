@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Edit, Trash2, Printer, RotateCcw, Save, X, Home } from 'lucide-react';
+import { ShoppingCart, Plus, Edit, Trash2, Printer, RotateCcw, Save, X, Home, BarChart3, Calendar, Filter } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
 const RestaurantPOS = () => {
@@ -9,6 +9,9 @@ const RestaurantPOS = () => {
   const [cart, setCart] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [reportData, setReportData] = useState([]);
+  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [selectedReportCategory, setSelectedReportCategory] = useState('all');
   const [editingItem, setEditingItem] = useState(null);
 
   // Menu data from database
@@ -84,6 +87,75 @@ const RestaurantPOS = () => {
     } catch (error) {
       console.error('Error:', error);
     }
+  };
+
+  // Load reports data
+  const loadReportsData = async (startDate, endDate, category = 'all') => {
+    setLoading(true);
+    try {
+      let query = supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items(*)
+        `)
+        .order('timestamp', { ascending: false });
+      
+      if (startDate) {
+        query = query.gte('timestamp', startDate);
+      }
+      if (endDate) {
+        query = query.lte('timestamp', endDate + 'T23:59:59');
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error('Error loading reports:', error);
+        return;
+      }
+      
+      let filteredData = data || [];
+      
+      if (category !== 'all') {
+        filteredData = data.filter(order => 
+          order.order_items.some(item => {
+            const menuItem = menuData.find(m => m.name === item.item_name);
+            return menuItem && menuItem.category === category;
+          })
+        );
+      }
+      
+      setReportData(filteredData);
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Calculate report summary
+  const calculateReportSummary = () => {
+    const totalSales = reportData.reduce((sum, order) => sum + order.total, 0);
+    const totalOrders = reportData.length;
+    
+    const categoryStats = {};
+    
+    reportData.forEach(order => {
+      order.order_items.forEach(item => {
+        const menuItem = menuData.find(m => m.name === item.item_name);
+        if (menuItem) {
+          const category = menuItem.category;
+          if (!categoryStats[category]) {
+            categoryStats[category] = { count: 0, total: 0 };
+          }
+          categoryStats[category].count += item.quantity;
+          categoryStats[category].total += item.item_price * item.quantity;
+        }
+      });
+    });
+    
+    return { totalSales, totalOrders, categoryStats };
   };
 
   // Fixed categories array to prevent re-render
@@ -206,6 +278,38 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
 ===================`;
     
     // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>ใบเสร็จ - ครัวแม่กับป๋า</title>
+          <style>
+            body { font-family: 'Courier New', monospace; white-space: pre-line; margin: 20px; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>${orderContent}</body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  // Print receipt for specific order
+  const printOrderReceipt = (order) => {
+    const orderContent = `ครัวแม่กับป๋า
+===================
+ออร์เดอร์ ${order.order_id}
+${new Date(order.timestamp).toLocaleString('th-TH')}
+===================
+
+${order.order_items.map(item => `${item.item_name} x${item.quantity} - ฿${item.item_price * item.quantity}`).join('\n')}
+
+===================
+รวมทั้งหมด: ฿${order.total}
+===================`;
+    
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html>
@@ -582,8 +686,15 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
                   </div>
                 ))}
               </div>
-              <div className="border-t pt-2 font-bold text-right">
-                รวม: ฿{order.total}
+              <div className="border-t pt-2 flex justify-between items-center">
+                <button
+                  onClick={() => printOrderReceipt(order)}
+                  className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 flex items-center gap-1 text-sm"
+                >
+                  <Printer size={14} />
+                  พิมพ์ใบเสร็จ
+                </button>
+                <span className="font-bold">รวม: ฿{order.total}</span>
               </div>
             </div>
           ))}
@@ -591,6 +702,163 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
       )}
     </div>
   );
+
+  // Reports page
+  const ReportsPage = () => {
+    const { totalSales, totalOrders, categoryStats } = calculateReportSummary();
+    
+    const handleDateRangeSubmit = () => {
+      if (!dateRange.start || !dateRange.end) {
+        alert('กรุณาเลือกช่วงวันที่');
+        return;
+      }
+      loadReportsData(dateRange.start, dateRange.end, selectedReportCategory);
+    };
+    
+    const setQuickDateRange = (type) => {
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      
+      switch (type) {
+        case 'today':
+          setDateRange({ start: today, end: today });
+          loadReportsData(today, today, selectedReportCategory);
+          break;
+        case 'week':
+          const weekAgo = new Date(now.setDate(now.getDate() - 7)).toISOString().split('T')[0];
+          setDateRange({ start: weekAgo, end: today });
+          loadReportsData(weekAgo, today, selectedReportCategory);
+          break;
+        case 'month':
+          const monthAgo = new Date(now.setMonth(now.getMonth() - 1)).toISOString().split('T')[0];
+          setDateRange({ start: monthAgo, end: today });
+          loadReportsData(monthAgo, today, selectedReportCategory);
+          break;
+        default:
+          break;
+      }
+    };
+    
+    return (
+      <div className="p-4">
+        <h2 className="text-2xl font-bold mb-4">รายงานการขาย</h2>
+        
+        {/* Date Range Filters */}
+        <div className="bg-white p-4 rounded-lg border mb-6">
+          <h3 className="text-lg font-bold mb-3">กรองข้อมูล</h3>
+          
+          {/* Quick Date Buttons */}
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setQuickDateRange('today')}
+              className="bg-blue-500 text-white px-3 py-2 rounded hover:bg-blue-600 text-sm"
+            >
+              วันนี้
+            </button>
+            <button
+              onClick={() => setQuickDateRange('week')}
+              className="bg-blue-500 text-white px-3 py-2 rounded hover:bg-blue-600 text-sm"
+            >
+              7 วันที่แล้ว
+            </button>
+            <button
+              onClick={() => setQuickDateRange('month')}
+              className="bg-blue-500 text-white px-3 py-2 rounded hover:bg-blue-600 text-sm"
+            >
+              30 วันที่แล้ว
+            </button>
+          </div>
+          
+          {/* Custom Date Range */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label className="block text-sm font-medium mb-1">วันที่เริ่มต้น</label>
+              <input
+                type="date"
+                value={dateRange.start}
+                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">วันที่สิ้นสุด</label>
+              <input
+                type="date"
+                value={dateRange.end}
+                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">ประเภทอาหาร</label>
+              <select
+                value={selectedReportCategory}
+                onChange={(e) => setSelectedReportCategory(e.target.value)}
+                className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                <option value="all">ทั้งหมด</option>
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={handleDateRangeSubmit}
+              className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 flex items-center gap-2"
+            >
+              <Filter size={16} />
+              ค้นหา
+            </button>
+          </div>
+        </div>
+        
+        {loading && (
+          <div className="text-center py-4">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+            <p className="mt-2 text-gray-600">กำลังโหลดข้อมูล...</p>
+          </div>
+        )}
+        
+        {/* Summary Cards */}
+        {!loading && reportData.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="bg-green-100 p-4 rounded-lg">
+              <h3 className="text-lg font-bold text-green-800">ยอดขายรวม</h3>
+              <p className="text-3xl font-bold text-green-600">฿{totalSales.toLocaleString()}</p>
+            </div>
+            <div className="bg-blue-100 p-4 rounded-lg">
+              <h3 className="text-lg font-bold text-blue-800">จำนวนออร์เดอร์</h3>
+              <p className="text-3xl font-bold text-blue-600">{totalOrders} ออร์เดอร์</p>
+            </div>
+          </div>
+        )}
+        
+        {/* Category Statistics */}
+        {!loading && Object.keys(categoryStats).length > 0 && (
+          <div className="bg-white p-4 rounded-lg border mb-6">
+            <h3 className="text-lg font-bold mb-4">รายงานตามประเภท</h3>
+            <div className="space-y-3">
+              {Object.entries(categoryStats).map(([category, stats]) => (
+                <div key={category} className={`p-3 rounded ${categoryColors[category]} text-white`}>
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">{category}</span>
+                    <div className="text-right">
+                      <div>{stats.count} รายการ</div>
+                      <div className="font-bold">฿{stats.total.toLocaleString()}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {!loading && reportData.length === 0 && (
+          <p className="text-gray-500 text-center py-8">ไม่พบข้อมูลในช่วงที่ที่เลือก</p>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -643,6 +911,13 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
                 <RotateCcw size={16} />
                 ประวัติ
               </button>
+              <button
+                onClick={() => setCurrentPage('reports')}
+                className={`px-4 py-2 rounded flex items-center gap-2 ${currentPage === 'reports' ? 'bg-green-500 text-white' : 'bg-gray-200'}`}
+              >
+                <BarChart3 size={16} />
+                รายงาน
+              </button>
             </div>
           </div>
 
@@ -651,6 +926,7 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
           {(currentPage === 'menu' || currentPage === 'category') && selectedCategory && <CategoryPage />}
           {currentPage === 'management' && <ManagementPage />}
           {currentPage === 'history' && <HistoryPage />}
+          {currentPage === 'reports' && <ReportsPage />}
         </div>
 
         {/* Cart Sidebar */}
