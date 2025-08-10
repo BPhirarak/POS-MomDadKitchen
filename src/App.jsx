@@ -104,15 +104,14 @@ const RestaurantPOS = () => {
     alert(`ออร์เดอร์ #${orderNumber} ได้รับการสั่งซื้อแล้ว!`);
   };
 
-  // Print order (simulate)
+  // Print order
   const printOrder = () => {
     if (cart.length === 0) {
       alert('ไม่มีรายการในตะกร้า');
       return;
     }
     
-    const orderContent = `
-ครัวแม่กับป๋า
+    const orderContent = `ครัวแม่กับป๋า
 ===================
 ออร์เดอร์ #${orderNumber}
 ${new Date().toLocaleString('th-TH')}
@@ -122,11 +121,25 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
 
 ===================
 รวมทั้งหมด: ฿${calculateTotal()}
-===================
-    `;
+===================`;
     
-    console.log(orderContent);
-    alert('พิมพ์ใบเสร็จแล้ว (ดูใน Console)');
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>ใบเสร็จ - ครัวแม่กับป๋า</title>
+          <style>
+            body { font-family: 'Courier New', monospace; white-space: pre-line; margin: 20px; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>${orderContent}</body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   };
 
   const editItem = (item) => {
@@ -465,6 +478,23 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
           {/* Navigation */}
           <div className="bg-white border-b p-2">
             <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setCurrentPage('menu');
+                  setSelectedCategory(null);
+                }}
+                className={`px-4 py-2 rounded flex items-center gap-2 ${currentPage === 'menu' || currentPage === 'category' ? 'bg-green-500 text-white' : 'bg-gray-200'}`}
+              >
+                <Home size={16} />
+                เมนูหลัก
+              </button>
+              <button
+                onClick={() => setCurrentPage('management')}
+                className={`px-4 py-2 rounded flex items-center gap-2 ${currentPage === 'management' ? 'bg-green-500 text-white' : 'bg-gray-200'}`}
+              >
+                <Edit size={16} />
+                จัดการเมนู
+              </button>
               <button
                 onClick={() => setCurrentPage('history')}
                 className={`px-4 py-2 rounded flex items-center gap-2 ${currentPage === 'history' ? 'bg-green-500 text-white' : 'bg-gray-200'}`}
