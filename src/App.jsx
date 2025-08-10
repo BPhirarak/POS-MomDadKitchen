@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShoppingCart, Plus, Edit, Trash2, Printer, RotateCcw, Save, X, Home } from 'lucide-react';
+import { supabase } from './supabaseClient';
 
 const RestaurantPOS = () => {
   // States
@@ -7,39 +8,83 @@ const RestaurantPOS = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [cart, setCart] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
-  const [orderNumber, setOrderNumber] = useState(1);
+  const [loading, setLoading] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
 
-  // Sample menu data
-  const [menuData, setMenuData] = useState([
-    // สลัดและอาหารเพื่อสุขภาพ
-    { id: 1, name: 'สลัดผักใสใส', category: 'สลัดและอาหารเพื่อสุขภาพ', price: 89, image: null },
-    { id: 2, name: 'สลัดไก่ย่าง', category: 'สลัดและอาหารเพื่อสุขภาพ', price: 129, image: null },
-    { id: 3, name: 'สลัดปลาแซลมอน', category: 'สลัดและอาหารเพื่อสุขภาพ', price: 189, image: null },
-    { id: 4, name: 'สลัดซีซาร์', category: 'สลัดและอาหารเพื่อสุขภาพ', price: 109, image: null },
-    { id: 5, name: 'โบวล์ควินัว', category: 'สลัดและอาหารเพื่อสุขภาพ', price: 149, image: null },
+  // Menu data from database
+  const [menuData, setMenuData] = useState([]);
 
-    // หมี่และเส้น
-    { id: 6, name: 'หมี่คลุกไก่ฉีก', category: 'หมี่และเส้น', price: 69, image: null },
-    { id: 7, name: 'หมี่คลุกหมูย่าง', category: 'หมี่และเส้น', price: 79, image: null },
-    { id: 8, name: 'เส้นเล็กต้มยำ', category: 'หมี่และเส้น', price: 89, image: null },
-    { id: 9, name: 'บะหมี่แห้งหมูแดง', category: 'หมี่และเส้น', price: 85, image: null },
-    { id: 10, name: 'เกาเหลาไก่', category: 'หมี่และเส้น', price: 75, image: null },
+  // Load data on component mount
+  useEffect(() => {
+    loadMenuData();
+    loadOrderHistory();
+  }, []);
 
-    // เครื่องดื่มเพื่อสุขภาพ
-    { id: 11, name: 'น้ำสับปะรดคั้นสด', category: 'เครื่องดื่มเพื่อสุขภาพ', price: 45, image: null },
-    { id: 12, name: 'สมูทตี้มะม่วง', category: 'เครื่องดื่มเพื่อสุขภาพ', price: 59, image: null },
-    { id: 13, name: 'น้ำดีท็อกซ์', category: 'เครื่องดื่มเพื่อสุขภาพ', price: 55, image: null },
-    { id: 14, name: 'น้ำผักโขมมิกซ์', category: 'เครื่องดื่มเพื่อสุขภาพ', price: 65, image: null },
-    { id: 15, name: 'ชาเขียวน้ำผึ้ง', category: 'เครื่องดื่มเพื่อสุขภาพ', price: 39, image: null },
+  // Generate order ID in format yy-mm-running_number
+  const generateOrderId = async () => {
+    const now = new Date();
+    const year = now.getFullYear().toString().slice(-2);
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const prefix = `${year}-${month}-`;
+    
+    // Get today's orders count
+    const { data, error } = await supabase
+      .from('orders')
+      .select('order_id')
+      .like('order_id', `${prefix}%`);
+    
+    if (error) {
+      console.error('Error getting order count:', error);
+      return `${prefix}001`;
+    }
+    
+    const runningNumber = (data.length + 1).toString().padStart(3, '0');
+    return `${prefix}${runningNumber}`;
+  };
 
-    // ขนมและของหวาน
-    { id: 16, name: 'เค้กกล้วยหอม', category: 'ขนมและของหวาน', price: 49, image: null },
-    { id: 17, name: 'พุดดิ้งเชีย', category: 'ขนมและของหวาน', price: 55, image: null },
-    { id: 18, name: 'โยเกิร์ตผลไม้', category: 'ขนมและของหวาน', price: 45, image: null },
-    { id: 19, name: 'มูสช็อกโกแลต', category: 'ขนมและของหวาน', price: 65, image: null },
-    { id: 20, name: 'พาร์เฟ่ผลไม้', category: 'ขนมและของหวาน', price: 59, image: null }
-  ]);
+  // Load menu data from Supabase
+  const loadMenuData = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('menu_items')
+        .select('*')
+        .order('category', { ascending: true });
+      
+      if (error) {
+        console.error('Error loading menu:', error);
+        return;
+      }
+      
+      setMenuData(data || []);
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load order history from Supabase
+  const loadOrderHistory = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items(*)
+        `)
+        .order('timestamp', { ascending: false });
+      
+      if (error) {
+        console.error('Error loading orders:', error);
+        return;
+      }
+      
+      setOrderHistory(data || []);
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  };
 
   // Fixed categories array to prevent re-render
   const categories = ['สลัดและอาหารเพื่อสุขภาพ', 'หมี่และเส้น', 'เครื่องดื่มเพื่อสุขภาพ', 'ขนมและของหวาน'];
@@ -88,32 +133,69 @@ const RestaurantPOS = () => {
   };
 
   // Process order
-  const processOrder = () => {
+  const processOrder = async () => {
     if (cart.length === 0) return;
     
-    const order = {
-      id: orderNumber,
-      items: [...cart],
-      total: calculateTotal(),
-      timestamp: new Date().toLocaleString('th-TH')
-    };
-    
-    setOrderHistory([order, ...orderHistory]);
-    setCart([]);
-    setOrderNumber(orderNumber + 1);
-    alert(`ออร์เดอร์ #${orderNumber} ได้รับการสั่งซื้อแล้ว!`);
+    setLoading(true);
+    try {
+      const orderId = await generateOrderId();
+      const total = calculateTotal();
+      
+      // Insert order
+      const { error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          order_id: orderId,
+          total: total
+        });
+      
+      if (orderError) {
+        console.error('Error creating order:', orderError);
+        alert('เกิดข้อผิดพลาดในการบันทึกออร์เดอร์');
+        return;
+      }
+      
+      // Insert order items
+      const orderItems = cart.map(item => ({
+        order_id: orderId,
+        item_name: item.name,
+        item_price: item.price,
+        quantity: item.quantity
+      }));
+      
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
+      
+      if (itemsError) {
+        console.error('Error creating order items:', itemsError);
+        alert('เกิดข้อผิดพลาดในการบันทึกรายการ');
+        return;
+      }
+      
+      // Clear cart and reload history
+      setCart([]);
+      loadOrderHistory();
+      alert(`ออร์เดอร์ ${orderId} ได้รับการสั่งซื้อแล้ว!`);
+    } catch (error) {
+      console.error('Error processing order:', error);
+      alert('เกิดข้อผิดพลาดในการสั่งอาหาร');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Print order
-  const printOrder = () => {
+  const printOrder = async () => {
     if (cart.length === 0) {
       alert('ไม่มีรายการในตะกร้า');
       return;
     }
     
+    const orderId = await generateOrderId();
     const orderContent = `ครัวแม่กับป๋า
 ===================
-ออร์เดอร์ #${orderNumber}
+ออร์เดอร์ ${orderId}
 ${new Date().toLocaleString('th-TH')}
 ===================
 
@@ -147,29 +229,60 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
     setCurrentPage('management');
   };
 
-  const deleteItem = (itemId) => {
-    if (confirm('คุณต้องการลบรายการนี้หรือไม่?')) {
-      setMenuData(menuData.filter(item => item.id !== itemId));
+  const deleteItem = async (itemId) => {
+    if (!confirm('คุณต้องการลบรายการนี้หรือไม่?')) return;
+    
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('menu_items')
+        .delete()
+        .eq('id', itemId);
+      
+      if (error) {
+        console.error('Error deleting item:', error);
+        alert('เกิดข้อผิดพลาดในการลบรายการ');
+        return;
+      }
+      
+      alert('ลบรายการเรียบร้อยแล้ว');
+      loadMenuData(); // Reload menu data
+    } catch (error) {
+      console.error('Error:', error);
+      alert('เกิดข้อผิดพลาด');
+    } finally {
+      setLoading(false);
     }
   };
 
   // Main menu page
-  const MenuPage = () => (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4">
-      {categories.map(category => (
-        <div
-          key={category}
-          onClick={() => {
-            setSelectedCategory(category);
-            setCurrentPage('category');
-          }}
-          className={`${categoryColors[category]} text-white p-6 rounded-lg cursor-pointer hover:opacity-90 transition-opacity flex items-center justify-center text-center font-medium`}
-        >
-          {category}
+  const MenuPage = () => {
+    if (loading) {
+      return (
+        <div className="text-center py-8">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
+          <p className="mt-4 text-gray-600">กำลังโหลดเมนู...</p>
         </div>
-      ))}
-    </div>
-  );
+      );
+    }
+    
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4">
+        {categories.map(category => (
+          <div
+            key={category}
+            onClick={() => {
+              setSelectedCategory(category);
+              setCurrentPage('category');
+            }}
+            className={`${categoryColors[category]} text-white p-6 rounded-lg cursor-pointer hover:opacity-90 transition-opacity flex items-center justify-center text-center font-medium`}
+          >
+            {category}
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   // Category items page
   const CategoryPage = () => (
@@ -250,38 +363,59 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
       }
     };
 
-    const saveItem = () => {
+    const saveItem = async () => {
       if (!formData.name || !formData.category || !formData.price) {
         alert('กรุณากรอกข้อมูลให้ครบ');
         return;
       }
 
-      if (editingItem) {
-        setMenuData(menuData.map(item => 
-          item.id === editingItem.id 
-            ? { 
-                ...item, 
-                name: formData.name, 
-                category: formData.category, 
-                price: parseFloat(formData.price), 
-                image: formData.image 
-              }
-            : item
-        ));
-        setEditingItem(null);
-      } else {
-        const newId = Math.max(...menuData.map(item => item.id)) + 1;
-        setMenuData([...menuData, {
-          id: newId,
+      setLoading(true);
+      try {
+        const itemData = {
           name: formData.name,
           category: formData.category,
           price: parseFloat(formData.price),
-          image: formData.image
-        }]);
+          image_url: formData.image
+        };
+
+        if (editingItem) {
+          // Update existing item
+          const { error } = await supabase
+            .from('menu_items')
+            .update(itemData)
+            .eq('id', editingItem.id);
+          
+          if (error) {
+            console.error('Error updating item:', error);
+            alert('เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
+            return;
+          }
+          
+          setEditingItem(null);
+          alert('แก้ไขข้อมูลเรียบร้อยแล้ว');
+        } else {
+          // Insert new item
+          const { error } = await supabase
+            .from('menu_items')
+            .insert(itemData);
+          
+          if (error) {
+            console.error('Error adding item:', error);
+            alert('เกิดข้อผิดพลาดในการเพิ่มข้อมูล');
+            return;
+          }
+          
+          alert('เพิ่มข้อมูลใหม่เรียบร้อยแล้ว');
+        }
+        
+        setFormData({ name: '', category: '', price: '', image: null });
+        loadMenuData(); // Reload menu data
+      } catch (error) {
+        console.error('Error saving item:', error);
+        alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      } finally {
+        setLoading(false);
       }
-      
-      setFormData({ name: '', category: '', price: '', image: null });
-      alert('บันทึกข้อมูลเรียบร้อยแล้ว');
     };
 
     const clearForm = () => {
@@ -423,21 +557,28 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
     <div className="p-4">
       <h2 className="text-2xl font-bold mb-4">ประวัติออร์เดอร์</h2>
       
-      {orderHistory.length === 0 ? (
+      {loading && (
+        <div className="text-center py-4">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+          <p className="mt-2 text-gray-600">กำลังโหลดข้อมูล...</p>
+        </div>
+      )}
+      
+      {!loading && orderHistory.length === 0 ? (
         <p className="text-gray-500">ยังไม่มีประวัติออร์เดอร์</p>
       ) : (
         <div className="space-y-4">
           {orderHistory.map(order => (
             <div key={order.id} className="bg-white p-4 rounded-lg border">
               <div className="flex justify-between items-center mb-2">
-                <h3 className="font-bold">ออร์เดอร์ #{order.id}</h3>
-                <span className="text-gray-500 text-sm">{order.timestamp}</span>
+                <h3 className="font-bold">ออร์เดอร์ {order.order_id}</h3>
+                <span className="text-gray-500 text-sm">{new Date(order.timestamp).toLocaleString('th-TH')}</span>
               </div>
               <div className="space-y-1 mb-2">
-                {order.items.map(item => (
-                  <div key={item.id} className="flex justify-between text-sm">
-                    <span>{item.name} x{item.quantity}</span>
-                    <span>฿{item.price * item.quantity}</span>
+                {order.order_items && order.order_items.map((item, index) => (
+                  <div key={index} className="flex justify-between text-sm">
+                    <span>{item.item_name} x{item.quantity}</span>
+                    <span>฿{item.item_price * item.quantity}</span>
                   </div>
                 ))}
               </div>
@@ -467,7 +608,7 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
           </div>
           
           <div className="flex items-center gap-2">
-            <span className="text-sm">ออร์เดอร์ถัดไป: #{orderNumber}</span>
+            {loading && <span className="text-sm">กำลังประมวลผล...</span>}
           </div>
         </div>
       </div>
@@ -574,9 +715,10 @@ ${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quan
                 </button>
                 <button
                   onClick={processOrder}
-                  className="w-full bg-green-500 text-white py-2 rounded hover:bg-green-600"
+                  disabled={loading}
+                  className={`w-full py-2 rounded ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600'} text-white`}
                 >
-                  สั่งอาหาร
+                  {loading ? 'กำลังประมวลผล...' : 'สั่งอาหาร'}
                 </button>
                 <button
                   onClick={() => setCart([])}
