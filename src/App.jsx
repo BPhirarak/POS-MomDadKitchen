@@ -159,15 +159,20 @@ const RestaurantPOS = () => {
   };
 
   // Fixed categories array to prevent re-render
-  const categories = ['สลัดและอาหารเพื่อสุขภาพ', 'หมี่และเส้น', 'เครื่องดื่มเพื่อสุขภาพ', 'ขนมและของหวาน'];
+  const categories = [...new Set(menuData.map(item => item.category))].filter(Boolean).sort();
 
-  // Category colors
-  const categoryColors = {
-    'สลัดและอาหารเพื่อสุขภาพ': 'bg-emerald-500',
-    'หมี่และเส้น': 'bg-orange-500',
-    'เครื่องดื่มเพื่อสุขภาพ': 'bg-blue-500',
-    'ขนมและของหวาน': 'bg-pink-500'
-  };
+  // Category colors - dynamic based on categories
+  const categoryColorList = [
+    'bg-emerald-500', 'bg-orange-500', 'bg-blue-500', 'bg-pink-500', 
+    'bg-purple-500', 'bg-indigo-500', 'bg-yellow-500', 'bg-red-500',
+    'bg-green-500', 'bg-teal-500', 'bg-cyan-500', 'bg-rose-500',
+    'bg-amber-500'
+  ];
+  
+  const categoryColors = {};
+  categories.forEach((category, index) => {
+    categoryColors[category] = categoryColorList[index % categoryColorList.length];
+  });
 
   // Add to cart
   const addToCart = (item) => {
@@ -201,7 +206,7 @@ const RestaurantPOS = () => {
 
   // Calculate total
   const calculateTotal = () => {
-    return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+    return cart.reduce((total, item) => total + (item.price_organic * item.quantity), 0);
   };
 
   // Process order
@@ -231,7 +236,7 @@ const RestaurantPOS = () => {
       const orderItems = cart.map(item => ({
         order_id: orderId,
         item_name: item.name,
-        item_price: item.price,
+        item_price: item.price_organic,
         quantity: item.quantity
       }));
       
@@ -271,7 +276,7 @@ const RestaurantPOS = () => {
 ${new Date().toLocaleString('th-TH')}
 ===================
 
-${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price * item.quantity}`).join('\n')}
+${cart.map(item => `${item.name} x${item.quantity} - ฿${item.price_organic * item.quantity}`).join('\n')}
 
 ===================
 รวมทั้งหมด: ฿${calculateTotal()}
@@ -429,7 +434,7 @@ ${order.order_items.map(item => `${item.item_name} x${item.quantity} - ฿${item
               )}
               <div className="text-center">
                 <div className="font-medium text-sm mb-1">{item.name}</div>
-                <div className="text-green-600 font-bold">฿{item.price}</div>
+                <div className="text-green-600 font-bold">฿{item.price_organic}</div>
               </div>
             </div>
           ))}
@@ -440,11 +445,31 @@ ${order.order_items.map(item => `${item.item_name} x${item.quantity} - ฿${item
   // Management page with isolated form
   const ManagementPage = () => {
     const [formData, setFormData] = useState({
+      sku: editingItem?.sku || '',
       name: editingItem?.name || '',
       category: editingItem?.category || '',
-      price: editingItem?.price?.toString() || '',
+      description: editingItem?.description || '',
+      price: editingItem?.price_organic?.toString() || '',
+      cost: editingItem?.cost?.toString() || '',
+      stock: editingItem?.in_stock_organic?.toString() || '',
       image: editingItem?.image || null
     });
+
+    // Update form data when editingItem changes
+    useEffect(() => {
+      if (editingItem) {
+        setFormData({
+          sku: editingItem.sku || '',
+          name: editingItem.name || '',
+          category: editingItem.category || '',
+          description: editingItem.description || '',
+          price: editingItem.price_organic?.toString() || '',
+          cost: editingItem.cost?.toString() || '',
+          stock: editingItem.in_stock_organic?.toString() || '',
+          image: editingItem.image || null
+        });
+      }
+    }, [editingItem]);
 
     const handleInputChange = (field, value) => {
       setFormData(prev => ({
@@ -468,17 +493,21 @@ ${order.order_items.map(item => `${item.item_name} x${item.quantity} - ฿${item
     };
 
     const saveItem = async () => {
-      if (!formData.name || !formData.category || !formData.price) {
-        alert('กรุณากรอกข้อมูลให้ครบ');
+      if (!formData.sku || !formData.name || !formData.category || !formData.price) {
+        alert('กรุณากรอกข้อมูลให้ครบ (SKU, ชื่อ, หมวดหมู่, ราคา)');
         return;
       }
 
       setLoading(true);
       try {
         const itemData = {
+          sku: formData.sku,
           name: formData.name,
           category: formData.category,
-          price: parseFloat(formData.price),
+          description: formData.description || null,
+          price_organic: parseFloat(formData.price),
+          cost: parseFloat(formData.cost) || 0,
+          in_stock_organic: parseInt(formData.stock) || 0,
           image_url: formData.image
         };
 
@@ -512,7 +541,7 @@ ${order.order_items.map(item => `${item.item_name} x${item.quantity} - ฿${item
           alert('เพิ่มข้อมูลใหม่เรียบร้อยแล้ว');
         }
         
-        setFormData({ name: '', category: '', price: '', image: null });
+        setFormData({ sku: '', name: '', category: '', description: '', price: '', cost: '', stock: '', image: null });
         loadMenuData(); // Reload menu data
       } catch (error) {
         console.error('Error saving item:', error);
@@ -523,7 +552,7 @@ ${order.order_items.map(item => `${item.item_name} x${item.quantity} - ฿${item
     };
 
     const clearForm = () => {
-      setFormData({ name: '', category: '', price: '', image: null });
+      setFormData({ sku: '', name: '', category: '', description: '', price: '', cost: '', stock: '', image: null });
       setEditingItem(null);
     };
 
@@ -536,7 +565,16 @@ ${order.order_items.map(item => `${item.item_name} x${item.quantity} - ฿${item
           <h3 className="text-lg font-bold mb-3">
             {editingItem ? 'แก้ไขรายการ' : 'เพิ่มรายการใหม่'}
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4">
+            <input
+              type="text"
+              placeholder="รหัสสินค้า (SKU)"
+              value={formData.sku}
+              onChange={(e) => handleInputChange('sku', e.target.value)}
+              className="p-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+              autoComplete="off"
+              required
+            />
             <input
               type="text"
               placeholder="ชื่ออาหาร"
@@ -544,25 +582,57 @@ ${order.order_items.map(item => `${item.item_name} x${item.quantity} - ฿${item
               onChange={(e) => handleInputChange('name', e.target.value)}
               className="p-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
               autoComplete="off"
+              required
             />
             <select
               value={formData.category}
               onChange={(e) => handleInputChange('category', e.target.value)}
               className="p-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+              required
             >
               <option value="">เลือกประเภท</option>
               {categories.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>
+            <textarea
+              placeholder="คำอธิบาย (ไม่บังคับ)"
+              value={formData.description}
+              onChange={(e) => handleInputChange('description', e.target.value)}
+              className="p-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+              rows="1"
+              autoComplete="off"
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <input
               type="number"
-              placeholder="ราคา"
+              placeholder="ราคาขาย"
               value={formData.price}
               onChange={(e) => handleInputChange('price', e.target.value)}
               className="p-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
               min="0"
               step="0.01"
+              autoComplete="off"
+              required
+            />
+            <input
+              type="number"
+              placeholder="ต้นทุน"
+              value={formData.cost}
+              onChange={(e) => handleInputChange('cost', e.target.value)}
+              className="p-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+              min="0"
+              step="0.01"
+              autoComplete="off"
+            />
+            <input
+              type="number"
+              placeholder="จำนวนในสต็อก"
+              value={formData.stock}
+              onChange={(e) => handleInputChange('stock', e.target.value)}
+              className="p-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+              min="0"
               autoComplete="off"
             />
             <div>
@@ -628,8 +698,22 @@ ${order.order_items.map(item => `${item.item_name} x${item.quantity} - ฿${item
                           </div>
                         )}
                         <div>
-                          <span className="font-medium">{item.name}</span>
-                          <span className="text-green-600 font-bold ml-4">฿{item.price}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{item.name}</span>
+                            <span className="text-xs bg-gray-200 px-2 py-1 rounded">{item.sku}</span>
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            <span className="text-green-600 font-bold">฿{item.price_organic}</span>
+                            {item.cost && (
+                              <span className="ml-2 text-red-600">ต้นทุน: ฿{item.cost}</span>
+                            )}
+                            {item.in_stock_organic !== null && (
+                              <span className="ml-2 text-blue-600">สต็อก: {item.in_stock_organic}</span>
+                            )}
+                          </div>
+                          {item.description && (
+                            <div className="text-xs text-gray-500 mt-1">{item.description}</div>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -947,7 +1031,7 @@ ${order.order_items.map(item => `${item.item_name} x${item.quantity} - ฿${item
                   <div key={item.id} className="flex items-center justify-between bg-gray-50 p-3 rounded">
                     <div className="flex-1">
                       <div className="font-medium text-sm">{item.name}</div>
-                      <div className="text-green-600 font-bold">฿{item.price}</div>
+                      <div className="text-green-600 font-bold">฿{item.price_organic}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
